@@ -35,7 +35,7 @@ All on one machine: RTX 5090 (32 GB), Windows 11, 31 GB RAM, Chrome, 2026-11-09.
 
 The slow outliers are turns where the speaker trailed off mid-sentence and the system waited to be sure they had finished.
 
-GPU memory: about 9 GB for DuplexJev-4B-Para plus about 4 GB for Bolt E4B. The voice runs on the CPU. Startup takes about 15 seconds (about 35 the first time, while it compiles).
+GPU memory: about 9 GB for DuplexJev-4B-Para plus about 4 GB for Bolt E4B. The voice runs on the CPU. Startup takes about 15 seconds (about 40 to 45 the first time, while it compiles).
 
 These numbers come from one machine and one speaker. Yours will differ.
 
@@ -139,7 +139,8 @@ Because the hearing model is non-commercial, lil-sophon as shipped is for person
 
 ## Limitations
 
-- Run and measured on one Windows 11 machine with one GPU and one speaker. The setup steps above were written from that install and have not yet been repeated on a clean machine.
+- Run and measured on one Windows 11 machine with one GPU and one speaker.
+- Install check, 2026-11-10: setup steps 1, 2, 3 and 5 were followed exactly as written from a fresh clone into an empty folder with a new Python environment and fresh model downloads, and both `smoke.py` runs passed (Bolt 518 and 695 ms, DuplexJev 464 and 482 ms). That was on the same PC, so the GPU driver, Python 3.12 and git were already installed, and an already running Bolt server was reused: step 4 (downloading the GGUF and starting `llama-server`) was only checked as far as the file being available. It has not been installed on a second machine.
 - Not tested on Linux or macOS. `start-bridge.ps1` is Windows only; `python bridge.py` is the portable way to start it.
 - English only in practice.
 - Use headphones. On loud speakers the agent can hear itself, and in testing it then missed a real interruption.
