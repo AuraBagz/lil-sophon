@@ -1,0 +1,63 @@
+{
+  "q1_cook": {
+    "text": "What's a good way to start learning to cook?",
+    "kind": "question",
+    "expect_turn": "finished",
+    "seconds": 2.62
+  },
+  "q2_coveredcall": {
+    "text": "Can you explain what a covered call is, in simple terms?",
+    "kind": "question",
+    "expect_turn": "finished",
+    "seconds": 3.74
+  },
+  "q3_moon": {
+    "text": "How far away is the moon?",
+    "kind": "question",
+    "expect_turn": "finished",
+    "seconds": 2.3
+  },
+  "q4_stress": {
+    "text": "I'm feeling kind of stressed about work this week. Any tips?",
+    "kind": "question",
+    "expect_turn": "finished",
+    "seconds": 3.9
+  },
+  "q5_australia": {
+    "text": "What's the capital of Australia?",
+    "kind": "question",
+    "expect_turn": "finished",
+    "seconds": 2.46
+  },
+  "t1_pause_cut": {
+    "text": "So I was thinking about ... (cut inside a 0.6 s pause)",
+    "kind": "turn",
+    "expect_turn": "not finished",
+    "seconds": 2.36
+  },
+  "t1_pause_full": {
+    "text": "So I was thinking about ... maybe getting a dog. What breed is good for a small apartment?",
+    "kind": "question",
+    "expect_turn": "finished",
+    "seconds": 6.8
+  },
+  "t2_trail": {
+    "text": "Can you tell me how the",
+    "kind": "turn",
+    "expect_turn": "not finished",
+    "seconds": 2.08
+  },
+  "t3_wait": {
+    "text": "Um, hold on, let me think for a second.",
+    "kind": "turn",
+    "expect_turn": "hesitating",
+    "seconds": 3.36
+  },
+  "t4_backchannel": {
+    "text": "Mm-hmm, yeah.",
+    "kind": "turn",
+    "expect_turn": "backchannel",
+    "context": "The assistant had just said: \"The first step is to pick a few simple recipes you actually like.\"",
+    "seconds": 2.22
+  }
+}

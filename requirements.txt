@@ -1,0 +1,21 @@
+# Python 3.12. Torch wheels for CUDA 12.8 (RTX 50 series):
+#   pip install torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+torch==2.11.0
+torchaudio==2.11.0
+transformers==4.55.4
+accelerate==1.15.0
+peft==0.21.2
+safetensors==0.8.0
+huggingface-hub==0.36.2
+hf-xet==1.8.0
+numpy==2.5.4
+scipy==1.18.1
+soundfile==0.14.0
+aiohttp==3.14.5
+silero-vad==6.2.3
+# DuplexJev package (Apache-2.0), installed from its repo without deps:
+#   pip install --no-deps "duplexjev @ git+https://github.com/adventists-ai/duplexjev"   (we used 0.7.0)
+# Windows only, for the compiled decode step (about 5x faster replies):
+triton-windows==3.6.0.post26; sys_platform == "win32"
+# Voice (Phonon 31m). Can share this venv or live in its own (set DJV_PHONON_PY):
+ptts==0.4.0

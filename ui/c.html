@@ -1,0 +1,1752 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Response Time</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230A090E'/%3E%3Crect x='9' y='7' width='2' height='18' fill='%23F0EDE4'/%3E%3Crect x='21' y='7' width='2' height='18' fill='%23F0EDE4'/%3E%3Crect x='11' y='15' width='10' height='2' fill='%23B388FF'/%3E%3C/svg%3E">
+<style>
+/* ============================================================
+   TOKENS
+   Colour discipline: the three timing colours (best / good / slow)
+   are the only hues on this page, and they only ever mean a verdict
+   on a FINISHED measurement. Waveforms are bone. User versus agent
+   is told by form (hard bars versus smooth envelope), never by hue.
+   ============================================================ */
+:root{
+  --ink:        #0A090E;
+  --bone:       #F0EDE4;
+  --dim:        #6C6A7A;
+  --dimmer:     #3A3844;
+  --rule:       rgba(240,237,228,.085);
+
+  --best:       #B388FF;   /* fastest of the session */
+  --good:       #19E39B;   /* under one second */
+  --slow:       #FFC53D;   /* over one second */
+
+  --display: "Bahnschrift SemiCondensed","Bahnschrift","DIN Next LT Pro",
+             "Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --mono: "Cascadia Mono","Consolas",ui-monospace,"DejaVu Sans Mono",monospace;
+
+  /* motion scale (transitions.dev tokens) */
+  --d-quick: 150ms;
+  --d-fast: 250ms;
+  --d-slow: 400ms;
+  --d-emph: 500ms;
+  --e-out: cubic-bezier(.22,1,.36,1);
+  --e-inout: ease-in-out;
+
+  --grade: var(--bone);
+  --lv: 0;          /* live level 0..1, set from JS */
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+html{background:var(--ink)}
+body{
+  background:
+    radial-gradient(118% 76% at 50% 48%, rgba(150,142,185,.070) 0%, rgba(150,142,185,0) 62%),
+    var(--ink);
+  color:var(--bone);
+  font-family:var(--mono);
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---------- stage ---------- */
+.stage{
+  position:fixed; inset:0;
+  display:grid; place-items:center;
+}
+
+/* ---------- top rail ---------- */
+.rail{
+  position:absolute; top:clamp(18px,3.2vmin,40px); left:0; right:0;
+  display:flex; justify-content:space-between; align-items:center;
+  width:var(--w); margin:0 auto;
+  font-size:clamp(9.5px,1.08vmin,12px);
+  letter-spacing:.2em; text-transform:uppercase;
+  color:var(--dim);
+}
+.src{display:flex; align-items:center; gap:.62em}
+.src i{
+  width:5px; height:5px; border-radius:50%;
+  background:var(--dimmer);
+  transition:background var(--d-fast) var(--e-inout);
+}
+.src[data-s="live"] i{background:var(--good); box-shadow:0 0 0 3px rgba(25,227,155,.14)}
+.src[data-s="mic"]  i{background:var(--slow); box-shadow:0 0 0 3px rgba(255,197,61,.12)}
+.src[data-s="wait"] i{background:var(--dim); animation:srcblink 1s linear infinite}
+@keyframes srcblink{50%{opacity:.18}}
+.readouts{display:flex; gap:clamp(14px,2.2vmin,30px)}
+.readouts b{font-weight:400; color:var(--bone); opacity:.82}
+.readouts .best b{color:var(--best); opacity:1}
+
+/* ---------- core column ---------- */
+.core{display:flex; flex-direction:column; align-items:center; width:var(--w)}
+
+/* The hero sits over the playhead, not over the page centre, so that at
+   the instant the answer lands the number is directly above the gap it
+   is measuring. --headshift is set from the canvas geometry. */
+.heroblock{
+  display:flex; flex-direction:column; align-items:center;
+  transform:translateX(var(--headshift,0px));
+}
+
+/* ---------- hero number ---------- */
+.hero{
+  display:flex; align-items:baseline; justify-content:center;
+  font-family:var(--display);
+  font-variation-settings:"wght" 600,"wdth" 80;
+  font-weight:600;
+  font-size:clamp(88px,20.5vmin,250px);
+  line-height:.82;
+  color:var(--grade);
+  font-variant-numeric:tabular-nums lining-nums;
+  font-feature-settings:"tnum" 1,"lnum" 1;
+  transition:color var(--d-fast) var(--e-inout), opacity var(--d-fast) var(--e-inout);
+}
+.hero[data-grade="best"]{--grade:var(--best)}
+.hero[data-grade="good"]{--grade:var(--good)}
+.hero[data-grade="slow"]{--grade:var(--slow)}
+.hero[data-grade="live"]{--grade:var(--bone)}
+.hero[data-grade="held"]{--grade:var(--bone); opacity:.30}
+.hero[data-grade="none"]{--grade:var(--bone); opacity:.085}
+
+.digits{display:flex}
+.digits span{
+  display:block; width:.55em; text-align:center;
+  font-variant-numeric:tabular-nums;
+}
+.unit{
+  font-family:var(--mono); font-size:.148em; letter-spacing:.2em;
+  text-transform:uppercase; margin-left:.42em; opacity:.6;
+  transform:translateY(-.22em);
+}
+.hero.lock{animation:lock var(--d-emph) var(--e-out)}
+@keyframes lock{
+  0%  {transform:scale(.988); filter:blur(2.4px)}
+  38% {transform:scale(1.022); filter:blur(0)}
+  100%{transform:scale(1); filter:blur(0)}
+}
+
+.herolabel{
+  margin-top:clamp(12px,1.9vmin,22px);
+  font-size:clamp(9.5px,1.12vmin,12.5px);
+  letter-spacing:.28em; text-transform:uppercase;
+  color:var(--dim);
+}
+
+/* ---------- the tape ---------- */
+.band{
+  position:relative; width:100%;
+  margin-top:clamp(26px,4.4vmin,54px);
+  height:clamp(142px,24vmin,246px);
+}
+.band canvas{
+  display:block; width:100%; height:100%;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 7%,#000 93%,transparent 100%);
+          mask-image:linear-gradient(90deg,transparent 0,#000 7%,#000 93%,transparent 100%);
+}
+.key{
+  position:absolute; left:7%; top:100%; margin-top:10px;
+  display:flex; align-items:flex-end; gap:.7em;
+  font-size:clamp(9px,1.02vmin,11.5px); letter-spacing:.2em;
+  text-transform:uppercase; color:var(--dim);
+}
+.key i{
+  display:block; height:5px;
+  border:1px solid rgba(240,237,228,.20); border-top:0;
+}
+
+/* ---------- mic ---------- */
+.micwrap{
+  display:flex; flex-direction:column; align-items:center;
+  margin-top:clamp(52px,8.4vmin,104px);
+}
+.mic{
+  position:relative;
+  width:clamp(84px,13.4vmin,132px); aspect-ratio:1;
+  border:0; border-radius:50%; padding:0;
+  background:rgba(240,237,228,.022);
+  cursor:pointer; color:var(--bone);
+  display:grid; place-items:center;
+  transition:background var(--d-fast) var(--e-inout),
+             transform 140ms var(--e-out);
+}
+.mic:hover{background:rgba(240,237,228,.052)}
+.mic:active{transform:scale(.972)}
+.mic:focus-visible{outline:2px solid var(--bone); outline-offset:7px}
+.rings{position:absolute; inset:-26%; overflow:visible; pointer-events:none}
+.rings circle{fill:none; stroke:var(--bone); vector-effect:non-scaling-stroke}
+.r-base{stroke:var(--bone); stroke-opacity:.17; stroke-width:1}
+.r-halo{
+  stroke-opacity:calc(.10 + var(--lv) * .62); stroke-width:1.25;
+  transform:scale(calc(1 + var(--lv) * .145));
+}
+.r-arc{
+  stroke-opacity:0; stroke-width:1.5;
+  stroke-dasharray:88 352; stroke-linecap:round;
+}
+.glyph{
+  position:absolute; width:34%; height:34%;
+  fill:none; stroke:var(--bone); stroke-width:1.6;
+  stroke-linecap:round; stroke-linejoin:round;
+  transition:opacity var(--d-fast) var(--e-inout), filter var(--d-fast) var(--e-inout);
+}
+.g-stop{opacity:0; filter:blur(2px); stroke:none; fill:var(--bone); width:44%; height:44%}
+.state{
+  margin-top:clamp(34px,4.6vmin,50px);
+  font-size:clamp(10px,1.2vmin,13px);
+  letter-spacing:.3em; text-transform:uppercase;
+  color:var(--dim);
+  transition:color var(--d-fast) var(--e-inout);
+}
+.state.swap{animation:swap var(--d-quick) var(--e-inout)}
+@keyframes swap{
+  0%{opacity:0; filter:blur(2px); transform:translateY(4px)}
+  100%{opacity:1; filter:blur(0); transform:translateY(0)}
+}
+
+/* ---------- per state ---------- */
+body[data-state="idle"] .mic{background:rgba(240,237,228,.022)}
+body[data-live="1"] .state{color:var(--bone)}
+body[data-live="1"] .r-base{stroke-opacity:.30}
+body[data-state="listening"] .state{color:var(--bone)}
+body[data-state="thinking"] .r-arc{stroke-opacity:.9; animation:spin 1.05s linear infinite}
+body[data-state="thinking"] .r-halo{stroke-opacity:.08}
+body[data-state="speaking"] .r-base{stroke-opacity:.42}
+@keyframes spin{to{transform:rotate(360deg)}}
+body[data-state="speaking"] .g-mic,
+body[data-state="listening"] .g-mic,
+body[data-state="thinking"] .g-mic{opacity:1}
+body[data-live="1"] .g-mic{opacity:0; filter:blur(2px)}
+body[data-live="1"] .g-stop{opacity:.92; filter:blur(0)}
+
+/* breathing only while idle and not live */
+body[data-state="idle"]:not([data-live="1"]) .r-halo{
+  animation:breathe 4.2s var(--e-inout) infinite;
+}
+@keyframes breathe{
+  0%,100%{stroke-opacity:.10; transform:scale(1)}
+  50%    {stroke-opacity:.26; transform:scale(1.035)}
+}
+
+/* ---------- recorder control ----------
+   Never painted into the recording: the file is composed on a separate
+   canvas, so this lives only on the monitor. Quiet until you reach for it. */
+.rec{
+  position:fixed; left:22px; bottom:20px; z-index:5;
+  display:flex; align-items:center; gap:10px;
+  opacity:.3; transition:opacity var(--d-fast) var(--e-inout);
+}
+.rec:hover,.rec:focus-within,.rec[data-s="rec"]{opacity:1}
+.recbtn{
+  width:26px; height:26px; padding:0; border-radius:50%;
+  border:1px solid rgba(240,237,228,.3); background:transparent;
+  display:grid; place-items:center; cursor:pointer;
+  transition:border-color var(--d-fast) var(--e-inout);
+}
+.recbtn:focus-visible{outline:2px solid var(--bone); outline-offset:4px}
+.recbtn i{
+  width:9px; height:9px; border-radius:50%; background:rgba(240,237,228,.55);
+  transition:background var(--d-fast) var(--e-inout),
+             border-radius var(--d-fast) var(--e-inout);
+}
+.rec[data-s="rec"] .recbtn{border-color:rgba(255,86,86,.6); animation:recpulse 1.7s var(--e-inout) infinite}
+.rec[data-s="rec"] .recbtn i{background:#FF5656; border-radius:2px}
+@keyframes recpulse{50%{box-shadow:0 0 0 4px rgba(255,86,86,.12)}}
+.rectime{
+  font-size:11px; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--dim); font-variant-numeric:tabular-nums;
+}
+.rec[data-s="rec"] .rectime{color:#FF8686}
+
+.pill{
+  position:fixed; left:22px; bottom:60px; z-index:5;
+  max-width:min(460px,76vw); padding:10px 15px; border-radius:999px;
+  background:rgba(20,18,26,.94); border:1px solid rgba(240,237,228,.13);
+  color:var(--bone); font-size:11.5px; letter-spacing:.1em;
+  display:flex; align-items:center; gap:12px;
+  transition:opacity var(--d-slow) var(--e-inout);
+}
+.pill[hidden]{display:none}
+.pill.out{opacity:0}
+.pill b{font-weight:400; color:var(--dim)}
+.pill button,.pill a{
+  font:inherit; letter-spacing:inherit; color:var(--best);
+  background:none; border:0; padding:0; cursor:pointer; text-decoration:none;
+  white-space:nowrap;
+}
+
+/* ---------- reduced motion ---------- */
+@media (prefers-reduced-motion:reduce){
+  .r-halo,.r-arc,.recbtn{animation:none !important}
+  .hero.lock{animation:none}
+  .state.swap{animation:none}
+  .src[data-s="wait"] i{animation:none}
+}
+
+/* ---------- narrow / vertical ---------- */
+@media (max-aspect-ratio:1/1){
+  .hero{font-size:clamp(82px,19vmin,230px)}
+  .band{height:clamp(150px,22vmin,230px)}
+}
+@media (max-width:560px){
+  .rail{letter-spacing:.14em}
+  .readouts{gap:12px}
+  .herolabel{letter-spacing:.2em}
+}
+</style>
+</head>
+<body data-state="idle" data-live="0">
+
+<div class="stage">
+  <div class="rail" aria-hidden="true">
+    <div class="src" id="src" data-s="sim"><i></i><span id="srctext">sim loop</span></div>
+    <div class="readouts">
+      <span class="turn">turn <b id="turncount">00</b></span>
+      <span class="best">best <b id="bestval">000 ms</b></span>
+    </div>
+  </div>
+
+  <div class="core">
+    <div class="heroblock">
+      <div class="hero" id="hero" data-grade="none" role="status" aria-live="off">
+        <div class="digits" id="digits"><span>0</span><span>0</span><span>0</span></div>
+        <div class="unit">ms</div>
+      </div>
+      <div class="herolabel">speech end to first audio</div>
+    </div>
+
+    <div class="band">
+      <canvas id="tape"></canvas>
+      <div class="key" aria-hidden="true"><i id="keybar"></i><span id="keylabel">100 ms</span></div>
+    </div>
+
+    <div class="micwrap">
+      <button class="mic" id="mic" aria-label="Start talking">
+        <svg class="rings" viewBox="-80 -80 160 160" aria-hidden="true">
+          <circle class="r-base" r="56"/>
+          <circle class="r-halo" r="56"/>
+          <circle class="r-arc"  r="69"/>
+        </svg>
+        <svg class="glyph g-mic" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3.2a3 3 0 0 0-3 3v5.4a3 3 0 0 0 6 0V6.2a3 3 0 0 0-3-3Z"/>
+          <path d="M5.4 11.1a6.6 6.6 0 0 0 13.2 0"/>
+          <path d="M12 17.7V21"/>
+        </svg>
+        <svg class="glyph g-stop" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="6.6" y="6.6" width="10.8" height="10.8" rx="2"/>
+        </svg>
+      </button>
+      <div class="state" id="stateword">press to talk</div>
+    </div>
+  </div>
+</div>
+
+<div class="rec" id="recui" data-s="idle">
+  <button class="recbtn" id="recbtn" aria-label="Start recording" title="Record (R)"><i></i></button>
+  <span class="rectime" id="rectime">rec</span>
+</div>
+<div class="pill" id="pill" hidden></div>
+
+<script>
+"use strict";
+/* ================================================================
+   One screen. One instrument.
+
+   The tape scrolls right to left at a constant, labelled rate with a
+   fixed playhead. Your voice draws as hard bars, the agent's voice as
+   a smooth envelope. At your last voiced frame a marker drops, and the
+   void between that marker and the agent's first audio chunk is filled
+   as a block drawn TO SCALE on the same timebase as everything else.
+   The hero number is bound to that block: they grow together while the
+   model thinks, and they stop and take a verdict colour at the same
+   instant. The scale key under the ruler makes the scale checkable.
+
+   Stage 2 interface (the only surface the bridge touches):
+     vx.setState("idle"|"listening"|"thinking"|"speaking")
+     vx.setLevel(0..1)
+     vx.pushCaption(who, text)        stored, not drawn in this direction
+     vx.setLatency(ms)
+   ================================================================ */
+
+const Q          = new URLSearchParams(location.search);
+const FREEZE     = Q.get("state");                 /* idle|listening|thinking|speaking */
+const FORCE_DEMO = Q.get("demo") === "1";
+const WS_URL     = Q.get("ws") || null;
+const REDUCE     = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* tuning */
+const SAMPLE_MS      = 16;     /* tape sample pitch */
+const RULER_H        = 30;     /* ruler strip height, css px */
+const HEAD_FRAC      = 0.56;   /* playhead across the band */
+const FRAME_SAMPLES  = 320;    /* 20 ms at 16 kHz */
+const OUT_RATE       = 24000;  /* agent audio, per the bridge */
+const IN_RATE        = 16000;  /* mic audio, per the bridge */
+const VOICE_ON       = 0.085;  /* level above which we call it voiced */
+const BARGE_LEVEL    = 2.0;    /* local barge in OFF (rms never exceeds 1): the bridge decides, echo and noise aware, and sends "interrupted" */
+const BARGE_HOLD     = 120;    /* ms above BARGE_LEVEL before we cut playback */
+const SLOW_MS        = 1000;   /* over this reads as slow */
+
+const $ = (id) => document.getElementById(id);
+const el = {
+  body:document.body, hero:$("hero"), digits:$("digits"), tape:$("tape"),
+  keybar:$("keybar"), keylabel:$("keylabel"), mic:$("mic"), state:$("stateword"),
+  src:$("src"), srctext:$("srctext"), turn:$("turncount"), best:$("bestval"),
+  core:document.querySelector(".core"), rail:document.querySelector(".rail"),
+  label:document.querySelector(".herolabel"), key:document.querySelector(".key"),
+  recui:$("recui"), recbtn:$("recbtn"), rectime:$("rectime"), pill:$("pill"),
+};
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const CSSVAR = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const MONO_FAM = CSSVAR("--mono");
+const DISPLAY_FAM = CSSVAR("--display");
+
+/* ---------------- clock (freezable for capture) ---------------- */
+let frozenNow = null;
+const clk = () => frozenNow !== null ? frozenNow : performance.now();
+
+/* ---------------- state ---------------- */
+const S = {
+  state:"idle",
+  live:false,              /* a session is open */
+  level:0, shown:0,        /* raw and smoothed level */
+  lastVoiced:clk(),        /* last moment the mic was voiced */
+  turn:0,
+  best:null,
+  reading:null,            /* last locked ms */
+  grade:"none",
+  openGap:null,
+  captions:[],
+};
+
+/* ---------------- the tape ---------------- */
+const T = { samples:[], gaps:[], cuts:[] };   /* kind 0 silence, 1 user, 2 agent */
+let nextSampleAt = clk();
+
+function pushSamples(now){
+  if (nextSampleAt > now) return;
+  if (now - nextSampleAt > 400) nextSampleAt = now;   /* after a stall, do not backfill */
+  /* the user's voice is drawn whenever the mic is voiced, not only once the server has
+     confirmed "listening", so speech the agent hears is never missing from the tape */
+  const kind = S.state === "speaking" ? 2
+             : (S.state === "listening" || (S.live && S.level > VOICE_ON)) ? 1 : 0;
+  while (nextSampleAt <= now){
+    T.samples.push({ t:nextSampleAt, lvl:kind ? S.shown : 0, kind });
+    nextSampleAt += SAMPLE_MS;
+  }
+}
+
+/* ---------------- geometry ---------------- */
+const ctx = el.tape.getContext("2d");
+let cssW = 0, cssH = 0, pxPerMs = 0.42, headX = 0;
+
+function layout(){
+  const w = Math.min(1400, Math.round(innerWidth * 0.90));
+  document.documentElement.style.setProperty("--w", w + "px");
+  const r = el.tape.getBoundingClientRect();
+  cssW = Math.max(240, Math.round(r.width));
+  cssH = Math.max(120, Math.round(r.height));
+  const dpr = Math.min(2.5, devicePixelRatio || 1);
+  el.tape.width  = Math.round(cssW * dpr);
+  el.tape.height = Math.round(cssH * dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  pxPerMs = clamp(cssW / 3300, 0.22, 0.46);
+  headX = Math.round(cssW * HEAD_FRAC);
+  document.documentElement.style.setProperty(
+    "--headshift", Math.round(cssW * (HEAD_FRAC - 0.5)) + "px");
+  const tick = 100 * pxPerMs;
+  el.keybar.style.width = tick.toFixed(1) + "px";
+  el.keylabel.textContent = "100 ms";
+}
+addEventListener("resize", () => { layout(); if (frozenNow !== null) draw(frozenNow); });
+
+/* ---------------- drawing ---------------- */
+const GRADE_RGB = { best:"179,136,255", good:"25,227,155", slow:"255,197,61", live:"240,237,228" };
+
+function draw(now){
+  ctx.clearRect(0, 0, cssW, cssH);
+  drawTape(ctx, cssW, cssH, pxPerMs, headX, now, !!(S.live || FREEZE));
+}
+
+/* The tape, drawn into any context at any geometry, so the live canvas and
+   the recording canvas share one implementation and cannot drift. */
+function drawTape(ctx, cssW, cssH, pxPerMs, headX, now, liveHead){
+  const waveH = cssH - RULER_H;
+  const mid = waveH / 2;
+  const amp = mid - 9;
+  const tx  = (t) => headX - (now - t) * pxPerMs;
+  const firstT = now - headX / pxPerMs - 40;
+  const lastT  = now + (cssW - headX) / pxPerMs + 40;
+
+  /* the only horizontal is the zero line the waveform sits on */
+  ctx.fillStyle = "rgba(240,237,228,.07)";
+  ctx.fillRect(0, Math.round(mid), cssW, 1);
+
+  /* ruler, ticks every 100 ms, tall every 500 ms */
+  const t0 = Math.floor(firstT / 100) * 100;
+  for (let t = t0; t <= lastT; t += 100){
+    const x = Math.round(tx(t)) + 0.5;
+    if (x < -2 || x > cssW + 2) continue;
+    const major = Math.round(t / 100) % 5 === 0;
+    const h = major ? 11 : 5;
+    ctx.fillStyle = x <= headX ? (major ? "rgba(240,237,228,.21)" : "rgba(240,237,228,.125)")
+                               : (major ? "rgba(240,237,228,.085)" : "rgba(240,237,228,.05)");
+    ctx.fillRect(x - 0.5, waveH + 6, 1, h);
+  }
+  ctx.fillStyle = "rgba(240,237,228,.05)";
+  ctx.fillRect(0, waveH + 6, cssW, 1);
+
+  /* the gap blocks: the measurement, drawn to scale on this same timebase */
+  const latest = T.gaps[T.gaps.length - 1];
+  for (const g of T.gaps){
+    const x0 = tx(g.t0);
+    const x1 = tx(g.open ? now : g.t1);
+    if (x1 < -60 || x0 > cssW + 60) continue;
+    const live = g.grade === "live";
+    const rgb = GRADE_RGB[g.grade] || GRADE_RGB.live;
+    const w = Math.max(1, x1 - x0);
+    const fade = g.open ? 1 : clamp((x1 + 40) / (cssW * 0.46), 0.3, 1);
+    const a = (v) => `rgba(${rgb},${(v * fade).toFixed(3)})`;
+    /* a dimension line, the way a drawing marks a measured distance:
+       two witness lines, a span between them, light tint inside */
+    ctx.fillStyle = a(live ? 0.055 : 0.105);
+    ctx.fillRect(x0, 4, w, waveH - 8);
+    ctx.fillStyle = a(live ? 0.62 : 0.9);
+    ctx.fillRect(Math.round(x0) - 0.5, 0, 1, waveH);
+    ctx.fillRect(Math.round(x1) - 0.5, 0, 1, waveH);
+    const my = Math.round(mid);
+    ctx.fillRect(x0, my - 0.5, w, 1);                       /* the span */
+    if (w > 16){                                            /* arrow ticks */
+      ctx.beginPath();
+      ctx.moveTo(x0, my); ctx.lineTo(x0 + 6, my - 3.4); ctx.lineTo(x0 + 6, my + 3.4);
+      ctx.moveTo(x1, my); ctx.lineTo(x1 - 6, my - 3.4); ctx.lineTo(x1 - 6, my + 3.4);
+      ctx.closePath(); ctx.fill();
+    }
+    /* the record strip: past turns keep their own reading */
+    if (!g.open && g !== latest && w > 44){
+      ctx.fillStyle = a(0.95);
+      ctx.font = "11px " + MONO_FAM;
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.fillText(String(g.ms), (x0 + x1) / 2, my - 10);
+    }
+  }
+
+  /* waveform: user as hard bars, agent as a smooth envelope */
+  const barPitch = SAMPLE_MS * pxPerMs;
+  const barW = Math.max(1.5, barPitch * 0.42);
+  ctx.fillStyle = "rgba(240,237,228,.94)";
+  let run = null;
+  const runs = [];
+  for (const s of T.samples){
+    if (s.t < firstT) continue;
+    if (s.kind === 1){
+      if (run){ runs.push(run); run = null; }
+      const h = Math.max(1.2, s.lvl * amp);
+      const x = tx(s.t);
+      if (x < -4 || x > cssW + 4) continue;
+      ctx.fillRect(x - barW / 2, mid - h, barW, h * 2);
+    } else if (s.kind === 2){
+      /* break the envelope at silence so pauses read as pauses */
+      if (s.lvl < 0.035){ if (run){ runs.push(run); run = null; } }
+      else (run || (run = [])).push(s);
+    } else if (run){ runs.push(run); run = null; }
+  }
+  if (run) runs.push(run);
+
+  for (const r of runs){
+    if (r.length < 7) continue;                                  /* no fragments */
+    let pk = 0; for (const s of r) if (s.lvl > pk) pk = s.lvl;
+    if (pk < 0.09) continue;                                     /* no debris */
+    /* taper both ends to the zero line so a pause reads as a pause
+       and never as a cliff edge */
+    const last = r.length - 1;
+    ctx.beginPath();
+    ctx.moveTo(tx(r[0].t), mid);
+    for (let i = 0; i <= last; i++){
+      ctx.lineTo(tx(r[i].t), mid - Math.max(.8, r[i].lvl * amp * .96));
+    }
+    ctx.lineTo(tx(r[last].t), mid);
+    for (let i = last; i >= 0; i--){
+      ctx.lineTo(tx(r[i].t), mid + Math.max(.8, r[i].lvl * amp * .96));
+    }
+    ctx.closePath();
+    ctx.fillStyle = "rgba(240,237,228,.11)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(240,237,228,.92)";
+    ctx.lineWidth = 1.5; ctx.lineJoin = "round";
+    ctx.stroke();
+  }
+
+  /* interrupt cuts */
+  for (const c of T.cuts){
+    const x = Math.round(tx(c.t)) + 0.5;
+    if (x < -4 || x > cssW + 4) continue;
+    ctx.fillStyle = "rgba(240,237,228,.72)";
+    ctx.fillRect(x - 1, 2, 2, waveH - 4);
+    ctx.fillRect(x - 5, mid - 1, 10, 2);
+  }
+
+  /* playhead */
+  const hx = headX + 0.5;
+  ctx.fillStyle = liveHead ? "rgba(240,237,228,.62)" : "rgba(240,237,228,.20)";
+  ctx.fillRect(hx - 0.5, 0, 1, waveH + 14);
+  ctx.beginPath();
+  ctx.moveTo(hx - 4.5, 0); ctx.lineTo(hx + 4.5, 0); ctx.lineTo(hx, 7);
+  ctx.closePath(); ctx.fill();
+}
+
+/* ---------------- hero number ---------------- */
+let shownDigits = "";
+function paintNumber(n, grade){
+  const txt = n === null ? "000" : String(Math.max(0, Math.round(n)));
+  if (txt !== shownDigits){
+    shownDigits = txt;
+    el.digits.textContent = "";
+    for (const ch of txt){
+      const s = document.createElement("span");
+      s.textContent = ch;
+      el.digits.appendChild(s);
+    }
+  }
+  if (el.hero.dataset.grade !== grade) el.hero.dataset.grade = grade;
+}
+function lockPop(){
+  if (REDUCE) return;
+  el.hero.classList.remove("lock");
+  void el.hero.offsetWidth;
+  el.hero.classList.add("lock");
+}
+
+/* ---------------- interface for stage 2 ---------------- */
+function setStateWord(){
+  const w = !S.live ? "press to talk"
+          : S.state === "idle" ? "ready" : S.state;
+  if (el.state.textContent === w) return;
+  el.state.textContent = w;
+  if (!REDUCE){
+    el.state.classList.remove("swap");
+    void el.state.offsetWidth;
+    el.state.classList.add("swap");
+  }
+}
+
+function setState(next){
+  if (next === S.state) return;
+  const prev = S.state, now = clk();
+
+  if (next === "thinking"){
+    /* open the gap at the last voiced frame, which is where the server
+       starts counting too (its ms includes the silence it waits out).
+       If we never heard a voiced frame, start at now rather than lie. */
+    const stale = now - S.lastVoiced > 1500;
+    const t0 = stale ? now : Math.min(now, S.lastVoiced);
+    S.openGap = { t0, t1:now, ms:0, grade:"live", open:true };
+    T.gaps.push(S.openGap);
+    paintNumber(0, "live");
+  }
+
+  if (next === "listening" && (prev === "speaking" || prev === "thinking")){
+    T.cuts.push({ t:now });                 /* barge in: a hard cut on the tape */
+    if (S.openGap){ S.openGap.open = false; S.openGap.t1 = now; S.openGap = null; }
+    paintNumber(S.reading, S.reading === null ? "none" : "held");
+  }
+
+  if (next === "idle" || next === "listening"){
+    if (S.reading !== null && next === "listening") paintNumber(S.reading, "held");
+  }
+
+  S.state = next;
+  el.body.dataset.state = next;
+  setStateWord();
+}
+
+function setLevel(v){ S.level = clamp(+v || 0, 0, 1); }
+
+function pushCaption(who, text){      /* direction C does not draw words */
+  S.captions.push({ who, text, t:clk() });
+  if (S.captions.length > 60) S.captions.shift();
+}
+
+function setLatency(ms){
+  const now = clk();
+  ms = Math.max(0, Math.round(ms));
+  const g = S.openGap;
+  if (g){
+    g.open = false;
+    g.t1 = now;
+    g.t0 = now - ms;              /* draw exactly the reported measurement */
+    g.ms = ms;
+    S.openGap = null;
+  } else {
+    T.gaps.push({ t0:now - ms, t1:now, ms, grade:"live", open:false });
+  }
+  const isBest = S.best === null || ms < S.best;
+  if (isBest) S.best = ms;
+  const grade = isBest ? "best" : ms > SLOW_MS ? "slow" : "good";
+  const last = T.gaps[T.gaps.length - 1];
+  if (last) last.grade = grade;
+  S.reading = ms; S.grade = grade;
+  S.turn += 1;
+  el.turn.textContent = String(S.turn).padStart(2, "0");
+  el.best.textContent = S.best + " ms";
+  paintNumber(ms, grade);
+  lockPop();
+}
+
+window.vx = { setState, setLevel, pushCaption, setLatency,
+              get state(){ return S.state }, get captions(){ return S.captions } };
+
+/* ================================================================
+   BRIDGE ADAPTER
+   The only place that knows the wire protocol (NOTES.md, Bridge
+   protocol): ws://127.0.0.1:8857/ws, binary in = agent PCM s16le
+   24 kHz, binary out = mic PCM s16le 16 kHz, text = JSON events.
+   ================================================================ */
+const Bridge = {
+  ws:null, ready:false,
+  url(){
+    if (WS_URL) return WS_URL;
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    if (location.protocol === "file:") return "ws://127.0.0.1:8857/ws";
+    return proto + "//" + location.host + "/ws";
+  },
+  open(){
+    return new Promise((resolve) => {
+      let settled = false;
+      let ws;
+      try { ws = new WebSocket(this.url()); }
+      catch (e){ resolve(false); return; }
+      ws.binaryType = "arraybuffer";
+      const fail = () => { if (!settled){ settled = true; resolve(false); } };
+      const t = setTimeout(fail, 3500);
+      ws.onopen = () => {
+        clearTimeout(t); this.ws = ws; settled = true;
+        try { ws.send(JSON.stringify({ type:"hello" })); } catch (e){}
+        resolve(true);
+      };
+      ws.onerror = () => { clearTimeout(t); fail(); };
+      ws.onclose = () => {
+        clearTimeout(t);
+        if (this.ws === ws){ this.ws = null; this.ready = false; Session.onBridgeClosed(); }
+        fail();
+      };
+      ws.onmessage = (ev) => this.onmessage(ev);
+    });
+  },
+  onmessage(ev){
+    if (typeof ev.data !== "string"){ Player.push(ev.data); return; }
+    let m; try { m = JSON.parse(ev.data); } catch (e){ return; }
+    switch (m.type){
+      case "ready":       this.ready = true; Session.rail("live","live"); break;
+      case "state":       setState(m.value); break;
+      case "caption":     pushCaption(m.who, m.text); break;
+      case "latency":     setLatency(m.ms); break;
+      case "interrupted":
+        Player.flush();
+        try { if (Player.gain && Player.ctx){ Player.gain.gain.cancelScheduledValues(Player.ctx.currentTime); Player.gain.gain.setValueAtTime(1, Player.ctx.currentTime); } } catch (e){}
+        break;
+      case "duck":
+        /* bridge is checking a possible interruption: lower her voice, restore if it was nothing */
+        try {
+          if (Player.gain && Player.ctx){
+            Player.gain.gain.cancelScheduledValues(Player.ctx.currentTime);
+            Player.gain.gain.setTargetAtTime(m.on ? 0.25 : 1, Player.ctx.currentTime, 0.04);
+          }
+        } catch (e){}
+        break;
+      case "audio_end":   Player.endOfReply(); break;
+      case "error":
+        Session.reason = m.text === "busy" ? "bridge busy · another tab has it"
+                                           : "bridge error · " + String(m.text).slice(0,40);
+        Session.rail("mic", Session.reason);
+        break;
+      /* "turn" is debug, deliberately not drawn */
+    }
+  },
+  sendPcm(int16){
+    const ws = this.ws;
+    if (!ws || ws.readyState !== 1) return;
+    ws.send(int16.buffer);
+  },
+  sendJson(o){
+    const ws = this.ws;
+    if (!ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify(o));
+  },
+  close(){
+    const ws = this.ws; this.ws = null; this.ready = false;
+    if (ws && ws.readyState <= 1) { try { ws.close(); } catch (e){} }
+  },
+};
+
+/* ================================================================
+   MIC CAPTURE: AudioWorklet, box filtered down to 16 kHz, 20 ms frames
+   ================================================================ */
+const WORKLET_SRC = `
+class Down extends AudioWorkletProcessor {
+  constructor(opts){
+    super();
+    this.outRate = opts.processorOptions.outRate;
+    this.frame = opts.processorOptions.frame;
+    this.step = sampleRate / this.outRate;
+    this.pos = 0; this.acc = 0; this.n = 0;
+    this.buf = new Int16Array(this.frame); this.i = 0;
+    this.peak = 0; this.sum = 0; this.cnt = 0;
+  }
+  process(inputs){
+    const ch = inputs[0] && inputs[0][0];
+    if (!ch) return true;
+    for (let k = 0; k < ch.length; k++){
+      const v = ch[k];
+      this.acc += v; this.n++;
+      this.sum += v * v; this.cnt++;
+      const a = v < 0 ? -v : v; if (a > this.peak) this.peak = a;
+      this.pos += 1;
+      if (this.pos >= this.step){
+        this.pos -= this.step;
+        let s = this.n ? this.acc / this.n : 0;
+        this.acc = 0; this.n = 0;
+        s = s > 1 ? 1 : s < -1 ? -1 : s;
+        this.buf[this.i++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        if (this.i >= this.frame){
+          this.port.postMessage({ pcm:this.buf.slice(0) }, []);
+          this.i = 0;
+        }
+      }
+    }
+    if (this.cnt > 1024){
+      this.port.postMessage({ rms:Math.sqrt(this.sum / this.cnt), peak:this.peak });
+      this.sum = 0; this.cnt = 0; this.peak = 0;
+    }
+    return true;
+  }
+}
+registerProcessor("down", Down);
+`;
+
+/* One AudioContext for the session. The mic and the agent have to live in the
+   same graph or the recorder cannot mix them into a single track. */
+const Audio = {
+  ctx:null,
+  ensure(){
+    if (!this.ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC();
+    }
+    if (this.ctx.state === "suspended") this.ctx.resume();
+    return this.ctx;
+  },
+  close(){ if (this.ctx){ try { this.ctx.close(); } catch (e){} } this.ctx = null; },
+};
+
+const Mic = {
+  ctx:null, stream:null, node:null, src:null, usingWorklet:false,
+  async start(){
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true,
+              channelCount:1 },
+      video:false,
+    });
+    this.stream = stream;
+    this.ctx = Audio.ensure();
+    await this.ctx.resume();
+    this.src = this.ctx.createMediaStreamSource(stream);
+
+    try {
+      const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type:"application/javascript" }));
+      await this.ctx.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+      this.node = new AudioWorkletNode(this.ctx, "down", {
+        numberOfInputs:1, numberOfOutputs:0,
+        processorOptions:{ outRate:IN_RATE, frame:FRAME_SAMPLES },
+      });
+      this.node.port.onmessage = (e) => {
+        const d = e.data;
+        if (d.pcm) Bridge.sendPcm(d.pcm);
+        if (d.rms !== undefined) Mic.onLevel(d.rms, d.peak);
+      };
+      this.src.connect(this.node);
+      this.usingWorklet = true;
+    } catch (err){
+      /* older engine: ScriptProcessor keeps the page working */
+      const sp = this.ctx.createScriptProcessor(2048, 1, 1);
+      const step = this.ctx.sampleRate / IN_RATE;
+      let pos = 0, acc = 0, n = 0, i = 0;
+      const buf = new Int16Array(FRAME_SAMPLES);
+      sp.onaudioprocess = (ev) => {
+        const ch = ev.inputBuffer.getChannelData(0);
+        let sum = 0, peak = 0;
+        for (let k = 0; k < ch.length; k++){
+          const v = ch[k];
+          acc += v; n++; sum += v * v;
+          const a = v < 0 ? -v : v; if (a > peak) peak = a;
+          if ((pos += 1) >= step){
+            pos -= step;
+            let s = n ? acc / n : 0; acc = 0; n = 0;
+            s = clamp(s, -1, 1);
+            buf[i++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            if (i >= FRAME_SAMPLES){ Bridge.sendPcm(buf.slice(0)); i = 0; }
+          }
+        }
+        Mic.onLevel(Math.sqrt(sum / ch.length), peak);
+      };
+      this.src.connect(sp);
+      const mute = this.ctx.createGain(); mute.gain.value = 0;
+      sp.connect(mute); mute.connect(this.ctx.destination);
+      this.node = sp;
+    }
+  },
+  onLevel(rms, peak){
+    /* speech rms sits low: map it to a lively 0..1 without lying about silence */
+    const v = clamp(Math.pow(clamp(rms * 7.2, 0, 1), 0.72), 0, 1);
+    Session.micLevel(v, peak);
+  },
+  stop(){
+    try { this.src && this.src.disconnect(); } catch (e){}
+    try { this.node && this.node.disconnect(); } catch (e){}
+    if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+    this.ctx = this.stream = this.node = this.src = null;   /* Audio owns the context */
+  },
+};
+
+/* ================================================================
+   PLAYBACK: queue 24 kHz s16le chunks back to back, cut instantly
+   ================================================================ */
+const Player = {
+  ctx:null, gain:null, analyser:null, data:null,
+  cursor:0, active:new Set(), draining:false,
+  ensure(){
+    if (this.ctx) return;
+    this.ctx = Audio.ensure();
+    this.gain = this.ctx.createGain();
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0.25;
+    this.data = new Float32Array(this.analyser.fftSize);
+    this.gain.connect(this.analyser);
+    this.analyser.connect(this.ctx.destination);
+    this.cursor = 0;
+  },
+  push(arrbuf){
+    this.ensure();
+    if (this.ctx.state === "suspended") this.ctx.resume();
+    const pcm = new Int16Array(arrbuf);
+    if (!pcm.length) return;
+    const buf = this.ctx.createBuffer(1, pcm.length, OUT_RATE);
+    const f = buf.getChannelData(0);
+    for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 32768;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.gain);
+    const lead = 0.045;
+    const at = Math.max(this.ctx.currentTime + lead, this.cursor);
+    src.start(at);
+    this.cursor = at + buf.duration;
+    this.active.add(src);
+    src.onended = () => this.active.delete(src);
+  },
+  level(){
+    if (!this.analyser || !this.active.size) return 0;
+    this.analyser.getFloatTimeDomainData(this.data);
+    let s = 0;
+    for (let i = 0; i < this.data.length; i++) s += this.data[i] * this.data[i];
+    const rms = Math.sqrt(s / this.data.length);
+    return clamp(Math.pow(clamp(rms * 3.4, 0, 1), 0.68), 0, 1);
+  },
+  flush(){
+    for (const s of this.active){ try { s.stop(0); } catch (e){} }
+    this.active.clear();
+    this.cursor = this.ctx ? this.ctx.currentTime : 0;
+  },
+  endOfReply(){ /* audio may still be draining; nothing to cut */ },
+  close(){
+    this.flush();
+    try { this.gain && this.gain.disconnect(); } catch (e){}
+    try { this.analyser && this.analyser.disconnect(); } catch (e){}
+    this.ctx = this.gain = this.analyser = null;   /* Audio owns the context */
+  },
+};
+
+/* ================================================================
+   SESSION: the mic button, the fallbacks, the local barge in
+   ================================================================ */
+const Session = {
+  mode:"sim",            /* sim | live | miconly */
+  bargeSince:0,
+  rail(s, text){ el.src.dataset.s = s; el.srctext.textContent = text; },
+
+  async toggle(){
+    if (S.live) return this.stop();
+    if (FORCE_DEMO){ Sim.restart(); return; }
+    S.live = true;
+    this.reason = null;
+    el.body.dataset.live = "1";
+    el.mic.setAttribute("aria-label", "End session");
+    Sim.stop();
+    setState("idle"); setStateWord();
+    this.rail("wait", "connecting");
+
+    let micOk = false;
+    try { await Mic.start(); micOk = true; }
+    catch (e){ micOk = false; }
+
+    if (!micOk){
+      this.rail("sim", "mic blocked · sim loop");
+      S.live = false; el.body.dataset.live = "0";
+      el.mic.setAttribute("aria-label", "Start talking");
+      Sim.restart();
+      return;
+    }
+
+    Player.ensure();        /* build the output graph inside the gesture */
+    const wsOk = await Bridge.open();
+    if (wsOk){ this.mode = "live"; this.rail("live", "live"); }
+    else     { this.mode = "miconly"; this.rail("mic", "mic only · no agent"); }
+    setStateWord();
+  },
+
+  stop(){
+    S.live = false;
+    this.mode = "sim";
+    el.body.dataset.live = "0";
+    el.mic.setAttribute("aria-label", "Start talking");
+    Bridge.close();
+    if (Rec.on) Rec.stop();      /* never strand a take when the session ends */
+    Mic.stop();
+    Player.close();
+    /* let the recorder flush its last chunk before the graph goes away */
+    setTimeout(() => { if (!S.live) Audio.close(); }, 800);
+    setState("idle");
+    setLevel(0);
+    setStateWord();
+    this.rail("sim", "idle");
+  },
+
+  reason:null,
+  onBridgeClosed(){
+    if (!S.live) return;
+    this.mode = "miconly";
+    this.rail("mic", this.reason || "mic only · no agent");
+  },
+
+  /* every mic level update while a session is open */
+  micLevel(v){
+    if (!S.live) return;
+    setLevel(v);
+    const now = clk();
+    if (v > VOICE_ON) S.lastVoiced = now;
+
+    if (this.mode === "miconly"){
+      /* no agent yet: the mic still drives idle and listening honestly */
+      if (v > VOICE_ON && S.state !== "listening") setState("listening");
+      else if (S.state === "listening" && now - S.lastVoiced > 650) setState("idle");
+      return;
+    }
+
+    /* local optimistic barge in so the cut lands on the frame you speak,
+       the server confirms with interrupted right after */
+    if (S.state === "speaking" || S.state === "thinking"){
+      if (v > BARGE_LEVEL){
+        if (!this.bargeSince) this.bargeSince = now;
+        if (now - this.bargeSince > BARGE_HOLD){
+          this.bargeSince = 0;
+          Player.flush();
+          Bridge.sendJson({ type:"interrupt" });
+          setState("listening");
+        }
+      } else this.bargeSince = 0;
+    } else this.bargeSince = 0;
+  },
+
+  interrupt(){
+    if (!S.live) return;
+    Player.flush();
+    Bridge.sendJson({ type:"interrupt" });
+  },
+};
+
+/* ================================================================
+   RECORDER
+   The file is composed on its own canvas at a fixed broadcast size, so
+   the take is the instrument and nothing else: no browser chrome, no
+   record button, no desktop, whatever size the window happens to be.
+   Audio is the mic and the agent mixed into one track in the session's
+   AudioContext, so both sides of the conversation are in the file.
+   ================================================================ */
+const REC_VERTICAL = Q.get("rec") === "vertical";
+const REC_W = REC_VERTICAL ? 1080 : 1920;
+const REC_H = REC_VERTICAL ? 1920 : 1080;
+const REC_MIMES = [
+  'video/mp4;codecs="avc1.640028,mp4a.40.2"',
+  'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
+  "video/mp4",
+  'video/webm;codecs="vp9,opus"',
+  'video/webm;codecs="vp8,opus"',
+  "video/webm",
+];
+
+const Rec = {
+  on:false, mr:null, chunks:[], mime:"", t0:0,
+  cv:null, g:null, bg:null, tape:null, tg:null,
+  stream:null, dest:null, micGain:null,
+  ratios:null, L:null, pending:[], fps:0, _n:0, _t:0, budget:0, vtrack:null,
+
+  /* The file is 60 fps, so paint and emit on a 60 Hz budget rather than on
+     every animation frame. On a 144 Hz monitor that is both less work and a
+     far more even cadence than letting the capture sample a 144 Hz canvas. */
+  tick(now, dt){
+    if (!this.on) return;
+    this.budget += dt;
+    if (this.budget < 16.6667) return;
+    this.budget -= 16.6667;
+    if (this.budget > 33) this.budget = 0;     /* after a stall, do not burst */
+    this.paint(now);
+    /* watchdog: if the encoder gives up, say so instead of handing over a
+       take that is quietly four seconds long */
+    if (this.mr && this.mr.state !== "recording"){
+      this.on = false;
+      el.recui.dataset.s = "idle";
+      el.rectime.textContent = "rec";
+      this.toast("recording ended early at " + ((clk() - this.t0) / 1000).toFixed(1)
+               + "s, keeping what we have <b>· add ?codec=webm for a steadier take</b>");
+      if (this.mr.state === "inactive" && this.chunks.length) this.finish();
+    }
+  },
+
+  /* line box ratios come from the live page, so the composed frame uses the
+     same vertical rhythm the browser computed instead of a guess */
+  measure(){
+    const h = (e) => e.getBoundingClientRect().height / parseFloat(getComputedStyle(e).fontSize);
+    this.ratios = { hero:h(el.hero), label:h(el.label), state:h(el.state), rail:h(el.src) };
+  },
+
+  layout(W, H){
+    const vmin = Math.min(W, H), vertical = H > W;
+    const cl = (lo, pref, hi) => Math.min(Math.max(lo, pref), hi);
+    const coreW = Math.min(1400, Math.round(W * 0.90));
+    const L = {
+      W, H, coreW, coreX: Math.round((W - coreW) / 2),
+      heroF:  vertical ? cl(82, 0.19 * vmin, 230) : cl(88, 0.205 * vmin, 250),
+      labelF: cl(9.5, 0.0112 * vmin, 12.5),
+      labelMT:cl(12, 0.019 * vmin, 22),
+      bandMT: cl(26, 0.044 * vmin, 54),
+      bandH:  vertical ? cl(150, 0.22 * vmin, 230) : cl(142, 0.24 * vmin, 246),
+      micMT:  cl(52, 0.084 * vmin, 104),
+      micD:   cl(84, 0.134 * vmin, 132),
+      stateMT:cl(34, 0.046 * vmin, 50),
+      stateF: cl(10, 0.012 * vmin, 13),
+      railT:  cl(18, 0.032 * vmin, 40),
+      railF:  cl(9.5, 0.0108 * vmin, 12),
+      railGap:cl(14, 0.022 * vmin, 30),
+      keyF:   cl(9, 0.0102 * vmin, 11.5),
+    };
+    const r = this.ratios;
+    L.heroH = L.heroF * r.hero;
+    L.labelH = L.labelF * r.label;
+    L.stateH = L.stateF * r.state;
+    L.railH = L.railF * r.rail;
+    L.total = L.heroH + L.labelMT + L.labelH + L.bandMT + L.bandH
+            + L.micMT + L.micD + L.stateMT + L.stateH;
+    L.heroY  = Math.round((H - L.total) / 2);
+    L.labelY = L.heroY + L.heroH + L.labelMT;
+    L.bandY  = L.labelY + L.labelH + L.bandMT;
+    L.micY   = L.bandY + L.bandH + L.micMT;
+    L.stateY = L.micY + L.micD + L.stateMT;
+    L.ppm    = clamp(coreW / 3300, 0.22, 0.46);
+    L.headX  = Math.round(coreW * HEAD_FRAC);
+    L.shift  = Math.round(coreW * (HEAD_FRAC - 0.5));
+    return L;
+  },
+
+  /* the page background, rendered once and blitted per frame */
+  buildBg(W, H){
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const g = c.getContext("2d");
+    g.fillStyle = "#0A090E"; g.fillRect(0, 0, W, H);
+    g.save();
+    g.translate(W * 0.5, H * 0.48);
+    g.scale(1, (0.76 * H) / (1.18 * W));
+    const rad = 1.18 * W;
+    const grad = g.createRadialGradient(0, 0, 0, 0, 0, rad);
+    grad.addColorStop(0,   "rgba(150,142,185,.070)");
+    grad.addColorStop(.62, "rgba(150,142,185,0)");
+    grad.addColorStop(1,   "rgba(150,142,185,0)");
+    g.fillStyle = grad;
+    g.fillRect(-rad, -rad, rad * 2, rad * 2);
+    g.restore();
+    return c;
+  },
+
+  /* text helpers: CSS puts the baseline in the middle of the line box */
+  baseline(g, top, boxH){
+    const m = g.measureText("0");
+    const a = m.fontBoundingBoxAscent, d = m.fontBoundingBoxDescent;
+    return top + (boxH - (a + d)) / 2 + a;
+  },
+  paint(now){
+    const g = this.g, L = this.L;
+    g.drawImage(this.bg, 0, 0);
+    g.textBaseline = "alphabetic";
+
+    /* ---- the tape, masked at both ends exactly like the page ---- */
+    const tg = this.tg;
+    tg.clearRect(0, 0, L.coreW, L.bandH);
+    drawTape(tg, L.coreW, L.bandH, L.ppm, L.headX, now, !!S.live);
+    tg.save();
+    tg.globalCompositeOperation = "destination-out";
+    const fade = tg.createLinearGradient(0, 0, L.coreW, 0);
+    fade.addColorStop(0, "rgba(0,0,0,1)");
+    fade.addColorStop(.07, "rgba(0,0,0,0)");
+    fade.addColorStop(.93, "rgba(0,0,0,0)");
+    fade.addColorStop(1, "rgba(0,0,0,1)");
+    tg.fillStyle = fade;
+    tg.fillRect(0, 0, L.coreW, L.bandH);
+    tg.restore();
+    g.drawImage(this.tape, L.coreX, Math.round(L.bandY));
+
+    /* ---- rail ---- */
+    const railMid = L.railT + L.railH / 2;
+    g.font = L.railF + "px " + MONO_FAM;
+    const railBase = this.baseline(g, L.railT, L.railH);
+    const dotR = 2.5;
+    const dotCol = { live:"#19E39B", mic:"#FFC53D", wait:"#6C6A7A", sim:"#3A3844" };
+    g.fillStyle = dotCol[el.src.dataset.s] || "#3A3844";
+    g.beginPath(); g.arc(L.coreX + dotR, railMid, dotR, 0, 6.2832); g.fill();
+    const ls = L.railF * 0.2;
+    if ("letterSpacing" in g) g.letterSpacing = ls.toFixed(2) + "px";
+    g.fillStyle = "#6C6A7A";
+    g.textAlign = "left";
+    g.fillText(el.srctext.textContent.toUpperCase(), L.coreX + dotR * 2 + L.railF * 0.62, railBase);
+
+    /* right side, laid out from the right edge */
+    const right = L.coreX + L.coreW;
+    const bestNum = el.best.textContent.toUpperCase();
+    const bestLbl = "BEST ";
+    const turnNum = el.turn.textContent;
+    const turnLbl = "TURN ";
+    const wBestNum = g.measureText(bestNum).width;
+    const wBestLbl = g.measureText(bestLbl).width;
+    const wTurnNum = g.measureText(turnNum).width;
+    const wTurnLbl = g.measureText(turnLbl).width;
+    const bestX = right - wBestNum - wBestLbl;
+    const turnX = bestX - L.railGap - wTurnNum - wTurnLbl;
+    g.fillStyle = "#6C6A7A"; g.fillText(turnLbl, turnX, railBase);
+    g.fillStyle = "rgba(240,237,228,.82)"; g.fillText(turnNum, turnX + wTurnLbl, railBase);
+    g.fillStyle = "#6C6A7A"; g.fillText(bestLbl, bestX, railBase);
+    g.fillStyle = "#B388FF"; g.fillText(bestNum, bestX + wBestLbl, railBase);
+
+    /* ---- hero number, sitting over the playhead ---- */
+    const heroCx = L.coreX + L.coreW / 2 + L.shift;
+    const grade = el.hero.dataset.grade;
+    const gcol = { best:"#B388FF", good:"#19E39B", slow:"#FFC53D" }[grade] || "#F0EDE4";
+    const galpha = grade === "held" ? 0.30 : grade === "none" ? 0.085 : 1;
+    const digits = el.digits.textContent;
+    const cell = L.heroF * 0.55;
+    const unitF = L.heroF * 0.148;
+    const unitLS = unitF * 0.2;
+    g.font = "600 " + L.heroF + 'px ' + DISPLAY_FAM;
+    if ("fontVariantCaps" in g) g.fontVariantCaps = "normal";
+    const heroBase = this.baseline(g, L.heroY, L.heroH);
+    if ("letterSpacing" in g) g.letterSpacing = "0px";
+    g.font = unitF + "px " + MONO_FAM;
+    if ("letterSpacing" in g) g.letterSpacing = unitLS.toFixed(2) + "px";
+    const wUnit = g.measureText("MS").width;
+    const block = digits.length * cell + L.heroF * 0.148 * 0.42 + wUnit;
+    let x = heroCx - block / 2;
+
+    g.globalAlpha = galpha;
+    g.fillStyle = gcol;
+    g.font = "600 " + L.heroF + "px " + DISPLAY_FAM;
+    if ("letterSpacing" in g) g.letterSpacing = "0px";
+    g.textAlign = "center";
+    for (const ch of digits){ g.fillText(ch, x + cell / 2, heroBase); x += cell; }
+    g.textAlign = "left";
+    g.font = unitF + "px " + MONO_FAM;
+    if ("letterSpacing" in g) g.letterSpacing = unitLS.toFixed(2) + "px";
+    g.globalAlpha = galpha * 0.6;
+    g.fillText("MS", x + unitF * 0.42, heroBase - unitF * 0.22);
+    g.globalAlpha = 1;
+
+    /* ---- label under the number ---- */
+    g.font = L.labelF + "px " + MONO_FAM;
+    if ("letterSpacing" in g) g.letterSpacing = (L.labelF * 0.28).toFixed(2) + "px";
+    g.fillStyle = "#6C6A7A";
+    g.textAlign = "center";
+    g.fillText(el.label.textContent.toUpperCase(),
+               heroCx + L.labelF * 0.14, this.baseline(g, L.labelY, L.labelH));
+
+    /* ---- scale key ---- */
+    const keyX = L.coreX + L.coreW * 0.07;
+    const keyY = L.bandY + L.bandH + 10;
+    const tick = 100 * L.ppm;
+    g.strokeStyle = "rgba(240,237,228,.20)";
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(keyX + .5, keyY + .5); g.lineTo(keyX + .5, keyY + 5.5);
+    g.lineTo(keyX + tick - .5, keyY + 5.5); g.lineTo(keyX + tick - .5, keyY + .5);
+    g.stroke();
+    g.font = L.keyF + "px " + MONO_FAM;
+    if ("letterSpacing" in g) g.letterSpacing = (L.keyF * 0.2).toFixed(2) + "px";
+    g.fillStyle = "#6C6A7A";
+    g.textAlign = "left";
+    g.fillText("100 MS", keyX + tick + L.keyF * 0.7, keyY + 5.5);
+
+    /* ---- mic ---- */
+    const mcx = L.coreX + L.coreW / 2;
+    const mcy = L.micY + L.micD / 2;
+    const u = (L.micD * 1.52) / 160;           /* one svg unit in device px */
+    const lv = parseFloat(CSSVAR("--lv")) || 0;
+    const st = S.state, liveNow = S.live;
+    g.beginPath(); g.arc(mcx, mcy, L.micD / 2, 0, 6.2832);
+    g.fillStyle = "rgba(240,237,228,.022)"; g.fill();
+
+    const baseOp = st === "speaking" && liveNow ? .42 : liveNow ? .30 : .17;
+    g.strokeStyle = "rgba(240,237,228," + baseOp + ")";
+    g.lineWidth = 1;
+    g.beginPath(); g.arc(mcx, mcy, 56 * u, 0, 6.2832); g.stroke();
+
+    let haloOp, haloScale = 1 + lv * 0.145;
+    if (st === "thinking") haloOp = .08;
+    else if (!liveNow && st === "idle"){
+      const p = REDUCE ? 0 : (Math.sin((now / 4200) * 6.2832 - 1.5708) * .5 + .5);
+      haloOp = .10 + p * .16; haloScale = 1 + p * .035;
+    } else haloOp = .10 + lv * .62;
+    g.strokeStyle = "rgba(240,237,228," + haloOp.toFixed(3) + ")";
+    g.lineWidth = 1.25;
+    g.beginPath(); g.arc(mcx, mcy, 56 * u * haloScale, 0, 6.2832); g.stroke();
+
+    if (st === "thinking"){
+      const r = 69 * u, circ = 6.2832 * r;
+      const seg = (88 / (88 + 352)) * circ;
+      const rot = REDUCE ? 0 : ((now % 1050) / 1050) * 6.2832;
+      g.strokeStyle = "rgba(240,237,228,.9)";
+      g.lineWidth = 1.5; g.lineCap = "round";
+      g.beginPath(); g.arc(mcx, mcy, r, rot, rot + seg / r); g.stroke();
+      g.lineCap = "butt";
+    }
+
+    /* glyph: mic, or the stop square once a session is open */
+    g.save();
+    g.translate(mcx, mcy);
+    if (liveNow){
+      const s = L.micD * 0.44 / 24;
+      g.scale(s, s);
+      g.fillStyle = "rgba(240,237,228,.92)";
+      g.beginPath();
+      const rr = 2, x0 = 6.6 - 12, y0 = 6.6 - 12, w = 10.8;
+      g.moveTo(x0 + rr, y0);
+      g.arcTo(x0 + w, y0, x0 + w, y0 + w, rr);
+      g.arcTo(x0 + w, y0 + w, x0, y0 + w, rr);
+      g.arcTo(x0, y0 + w, x0, y0, rr);
+      g.arcTo(x0, y0, x0 + w, y0, rr);
+      g.closePath(); g.fill();
+    } else {
+      const s = L.micD * 0.34 / 24;
+      g.scale(s, s); g.translate(-12, -12);
+      g.strokeStyle = "#F0EDE4";
+      g.lineWidth = 1.6; g.lineCap = "round"; g.lineJoin = "round";
+      g.stroke(new Path2D("M12 3.2a3 3 0 0 0-3 3v5.4a3 3 0 0 0 6 0V6.2a3 3 0 0 0-3-3Z"));
+      g.stroke(new Path2D("M5.4 11.1a6.6 6.6 0 0 0 13.2 0"));
+      g.stroke(new Path2D("M12 17.7V21"));
+      g.lineCap = "butt"; g.lineJoin = "miter";
+    }
+    g.restore();
+
+    /* ---- state word ---- */
+    g.font = L.stateF + "px " + MONO_FAM;
+    if ("letterSpacing" in g) g.letterSpacing = (L.stateF * 0.3).toFixed(2) + "px";
+    g.fillStyle = liveNow || st !== "idle" ? "#F0EDE4" : "#6C6A7A";
+    g.textAlign = "center";
+    g.fillText(el.state.textContent.toUpperCase(),
+               mcx + L.stateF * 0.15, this.baseline(g, L.stateY, L.stateH));
+    g.textAlign = "left";
+    if ("letterSpacing" in g) g.letterSpacing = "0px";
+
+    /* frame rate, for checking that recording costs nothing */
+    this._n++;
+    if (now - this._t > 500){ this.fps = Math.round(this._n * 1000 / (now - this._t)); this._n = 0; this._t = now; }
+  },
+
+  async start(){
+    if (this.on) return;
+    if (!S.live && !FORCE_DEMO){
+      /* one key to go: open the session, then roll */
+      await Session.toggle();
+    }
+    this.measure();
+    this.L = this.layout(REC_W, REC_H);
+    if (!this.cv){
+      this.cv = document.createElement("canvas");
+      this.cv.width = REC_W; this.cv.height = REC_H;
+      this.g = this.cv.getContext("2d", { alpha:false });
+      this.tape = document.createElement("canvas");
+      this.tg = this.tape.getContext("2d");
+    }
+    this.tape.width = this.L.coreW; this.tape.height = Math.round(this.L.bandH);
+    this.bg = this.buildBg(REC_W, REC_H);
+    this.paint(clk());
+
+    const want = Q.get("codec") === "webm" ? REC_MIMES.filter((m) => m.indexOf("webm") >= 0)
+               : Q.get("codec") === "mp4"  ? REC_MIMES.filter((m) => m.indexOf("mp4") >= 0)
+               : REC_MIMES;
+    this.mime = want.find((m) => {
+      try { return MediaRecorder.isTypeSupported(m); } catch (e){ return false; }
+    }) || "";
+
+    this.vstream = this.cv.captureStream(60);
+    const tracks = this.vstream.getVideoTracks();
+    let audioNote = "";
+    const actx = Audio.ctx;
+    if (actx){
+      this.dest = actx.createMediaStreamDestination();
+      if (Mic.src){
+        this.micGain = actx.createGain();
+        this.micGain.gain.value = 1;
+        Mic.src.connect(this.micGain);
+        this.micGain.connect(this.dest);
+      }
+      if (Player.analyser) Player.analyser.connect(this.dest);
+      tracks.push(...this.dest.stream.getAudioTracks());
+    } else audioNote = " (no audio: session not open)";
+
+    this.stream = new MediaStream(tracks);
+    this.chunks = [];
+    try {
+      this.mr = new MediaRecorder(this.stream, {
+        mimeType: this.mime || undefined,
+        videoBitsPerSecond: 16000000,
+        audioBitsPerSecond: 192000,
+      });
+    } catch (e){
+      this.teardownAudio();
+      this.toast("recorder failed to start: " + e.message);
+      return;
+    }
+    this.mr.ondataavailable = (e) => { if (e.data && e.data.size) this.chunks.push(e.data); };
+    this.mr.onstop = () => this.finish();
+    this.mr.onerror = (e) => {
+      /* keep whatever was encoded rather than losing the take */
+      this.lastError = (e.error && (e.error.name + ": " + e.error.message)) || "unknown";
+      this.on = false;
+      el.recui.dataset.s = "idle";
+      this.toast("recorder stopped: " + ((e.error && e.error.name) || "error"));
+      try { this.mr.state !== "inactive" && this.mr.stop(); } catch (x){ this.finish(); }
+    };
+    this.mr.start();   /* no timeslice: Chrome's mp4 muxer is steadier without one */
+    this.on = true; this.t0 = clk(); this.budget = 0;
+    el.recui.dataset.s = "rec";
+    el.recbtn.setAttribute("aria-label", "Stop recording");
+    this.tickTime();
+    if (audioNote) this.toast("recording" + audioNote);
+  },
+
+  stop(){
+    if (!this.on) return;
+    this.on = false;
+    el.recui.dataset.s = "idle";
+    el.recbtn.setAttribute("aria-label", "Start recording");
+    el.rectime.textContent = "saving";
+    try { this.mr.stop(); } catch (e){ this.finish(); }
+  },
+
+  teardownAudio(){
+    try { this.micGain && this.micGain.disconnect(); } catch (e){}
+    try { Player.analyser && this.dest && Player.analyser.disconnect(this.dest); } catch (e){}
+    try { this.vstream && this.vstream.getTracks().forEach(t => t.stop()); } catch (e){}
+    this.micGain = null; this.dest = null; this.vstream = null; this.vtrack = null;
+  },
+
+  tickTime(){
+    if (!this.on){ el.rectime.textContent = "rec"; return; }
+    const s = Math.floor((clk() - this.t0) / 1000);
+    el.rectime.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+    setTimeout(() => this.tickTime(), 250);
+  },
+
+  finish(){
+    this.teardownAudio();
+    const blob = new Blob(this.chunks, { type:this.mime || "video/webm" });
+    this.chunks = [];
+    el.rectime.textContent = "rec";
+    if (!blob.size){ this.toast("nothing recorded"); return; }
+    const ext = (this.mime || "").indexOf("mp4") >= 0 ? "mp4" : "webm";
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    const name = "voice-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+               + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
+               + (REC_VERTICAL ? "-vertical" : "") + "." + ext;
+    const take = { blob, name, mime:this.mime, mb:(blob.size / 1048576).toFixed(1) };
+    this.save(take);
+  },
+
+  async save(take){
+    if (location.protocol === "file:"){
+      this.offer(take, "no server on file://");
+      return;
+    }
+    this.toast("saving " + take.name + " · " + take.mb + " MB");
+    try {
+      const res = await fetch(location.origin + "/rec", {
+        method:"POST",
+        body:take.blob,
+        headers:{ "X-Rec-Name":take.name, "Content-Type":take.mime || "application/octet-stream" },
+      });
+      if (!res.ok) throw new Error("bridge said " + res.status);
+      let saved = take.name;
+      try {
+        const txt = (await res.text()).trim();
+        if (txt){
+          const j = txt[0] === "{" ? JSON.parse(txt) : null;
+          saved = (j && (j.name || j.file || j.path)) || txt.slice(0, 80);
+        }
+      } catch (e){}
+      const i = this.pending.indexOf(take);
+      if (i >= 0) this.pending.splice(i, 1);
+      this.toast("saved " + saved);
+    } catch (e){
+      this.offer(take, e.message);
+    }
+  },
+
+  /* a take is never lost: keep the blob and offer both ways out */
+  offer(take, why){
+    if (this.pending.indexOf(take) < 0) this.pending.push(take);
+    const url = URL.createObjectURL(take.blob);
+    this.toast(
+      "<b>save failed · " + why + "</b>",
+      [{ label:"retry", fn:() => this.save(take) },
+       { label:"download", href:url, download:take.name }],
+      0);
+  },
+
+  toast(html, actions, ms){
+    const p = el.pill;
+    p.innerHTML = html;
+    (actions || []).forEach((a) => {
+      let n;
+      if (a.href){ n = document.createElement("a"); n.href = a.href; n.download = a.download; }
+      else { n = document.createElement("button"); n.onclick = a.fn; }
+      n.textContent = a.label;
+      p.appendChild(n);
+    });
+    p.hidden = false; p.classList.remove("out");
+    clearTimeout(this._toast);
+    const hold = ms === 0 ? 0 : (ms || 3800);
+    if (hold){
+      this._toast = setTimeout(() => {
+        p.classList.add("out");
+        setTimeout(() => { if (p.classList.contains("out")) p.hidden = true; }, 420);
+      }, hold);
+    }
+  },
+
+  toggle(){ this.on ? this.stop() : this.start(); },
+};
+window.rec = Rec;
+
+el.recbtn.addEventListener("click", () => Rec.toggle());
+el.mic.addEventListener("click", () => Session.toggle());
+addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "Escape") Session.interrupt();
+  if (e.code === "Space" && e.target === document.body){ e.preventDefault(); Session.toggle(); }
+  if (e.key === "r" || e.key === "R"){ e.preventDefault(); Rec.toggle(); }
+});
+
+/* ================================================================
+   SIMULATOR: a believable twenty second turn cycle with one barge in,
+   so the page is never dead on a monitor. Replaced by the bridge the
+   moment a session goes live.
+   ================================================================ */
+const SCRIPT = [
+  { st:"idle",      d:1100 },
+  { st:"listening", d:3400, seed:0.4 },
+  { st:"thinking",  d:312  },
+  { st:"speaking",  d:3600, seed:1.1 },
+  { st:"idle",      d:1000 },
+  { st:"listening", d:2600, seed:2.3 },
+  { st:"thinking",  d:288  },
+  { st:"speaking",  d:4300, seed:0.7, cutAt:1950 },
+  { st:"listening", d:2200, seed:3.9 },
+  { st:"thinking",  d:341  },
+  { st:"speaking",  d:2600, seed:1.8 },
+  { st:"idle",      d:1200 },
+];
+const SCRIPT_MS = SCRIPT.reduce((a, s) => a + (s.cutAt || s.d), 0);
+
+function userLevel(t, seed){
+  const syl   = 0.5 + 0.5 * Math.sin(2 * Math.PI * 4.35 * t + seed * 3.1);
+  const word  = Math.max(0, Math.sin(2 * Math.PI * 0.74 * t + seed * 1.7) + 0.12);
+  const jit   = 0.5 + 0.5 * Math.sin(t * 37.3 + seed * 9);
+  const onset = Math.min(1, t / 0.09);
+  return clamp(onset * (0.26 + 0.74 * syl) * (0.18 + 0.86 * word) * (0.82 + 0.3 * jit) * 0.95, 0, 1);
+}
+function agentLevel(t, seed){
+  /* synthesised speech: even pace, clear syllables, clean sentence gaps */
+  const syl  = 0.5 + 0.5 * Math.sin(2 * Math.PI * 5.4 * t + seed * 2.2);
+  const syl2 = 0.5 + 0.5 * Math.sin(2 * Math.PI * 10.8 * t + seed);
+  const word = 0.62 + 0.38 * Math.sin(2 * Math.PI * 1.45 * t + seed * 1.3);
+  let v = (0.3 + 0.7 * syl) * (0.78 + 0.22 * syl2) * word;
+  const s = Math.sin(2 * Math.PI * 0.36 * t + 1.15);
+  if (s > 0.9) v *= 0.07;                        /* sentence boundaries */
+  return clamp(v * Math.min(1, t / 0.04) * 0.95, 0, 1);
+}
+
+const Sim = {
+  on:false, t0:0, i:-1, stepT0:0,
+  restart(){
+    if (S.live) return;
+    this.on = true; this.i = -1; this.t0 = clk(); this.stepT0 = clk();
+    Session.rail("sim", FORCE_DEMO ? "demo loop" : "sim loop");
+    this.step(0);
+  },
+  stop(){ this.on = false; },
+  step(now){
+    this.i = (this.i + 1) % SCRIPT.length;
+    if (this.i === 0){                       /* fresh lap: clear the record strip */
+      S.best = null; S.turn = 0; S.reading = null;
+      el.turn.textContent = "00"; el.best.textContent = "000 ms";
+      paintNumber(null, "none");
+    }
+    const s = SCRIPT[this.i];
+    this.stepT0 = now;
+    setState(s.st);
+    if (s.st === "thinking") this.pendingMs = s.d;
+  },
+  tick(now){
+    if (!this.on) return;
+    const s = SCRIPT[this.i];
+    if (!s) return;
+    const dt = (now - this.stepT0) / 1000;
+    const end = (s.cutAt || s.d) / 1000;
+
+    if (s.st === "listening"){
+      setLevel(userLevel(dt, s.seed));
+      if (S.level > VOICE_ON) S.lastVoiced = now;   /* same path as the mic */
+    }
+    else if (s.st === "speaking")  setLevel(agentLevel(dt, s.seed));
+    else                           setLevel(S.level * 0.86);
+
+    if (s.st === "thinking" && S.openGap) S.openGap.t1 = now;
+
+    if (dt >= end){
+      if (s.st === "thinking") setLatency(s.d);
+      if (s.cutAt) T.cuts.push({ t:now });
+      this.step(now);
+    }
+  },
+};
+
+/* ================================================================
+   LOOP
+   ================================================================ */
+let last = clk();
+function frame(){
+  const now = clk();
+  const dt = Math.min(64, now - last); last = now;
+
+  Sim.tick(now);
+
+  /* while the agent speaks the envelope is the real playback level,
+     never the mic, so room noise cannot colour the agent's waveform */
+  if (S.live && S.state === "speaking" && Player.ctx) setLevel(Player.level());
+
+  /* smooth: fast attack, slower release, so bars look like audio */
+  const target = S.level;
+  const k = target > S.shown ? 0.46 : 0.21;
+  S.shown += (target - S.shown) * Math.min(1, k * (dt / 16.7));
+  document.documentElement.style.setProperty("--lv", S.shown.toFixed(3));
+
+  /* the live count up: bound to the growing gap block */
+  if (S.state === "thinking" && S.openGap){
+    S.openGap.t1 = now;
+    paintNumber(now - S.openGap.t0, "live");
+  }
+
+  pushSamples(now);
+  const keep = now - (cssW / pxPerMs) - 600;
+  while (T.samples.length && T.samples[0].t < keep) T.samples.shift();
+  while (T.gaps.length && T.gaps[0].t1 < keep && !T.gaps[0].open) T.gaps.shift();
+  while (T.cuts.length && T.cuts[0].t < keep) T.cuts.shift();
+
+  draw(now);
+  Rec.tick(now, dt);              /* same loop, so the file cannot drift from the screen */
+
+  liveN++;
+  if (now - liveT > 500){ window.__fps = Math.round(liveN * 1000 / (now - liveT)); liveN = 0; liveT = now; }
+  requestAnimationFrame(frame);
+}
+let liveN = 0, liveT = 0;
+
+/* ================================================================
+   BOOT
+   ================================================================ */
+function boot(){
+  layout();
+  paintNumber(null, "none");
+  setStateWord();
+
+  if (FREEZE){
+    /* freeze mid motion for a capture: run the simulator on a virtual
+       clock up to a chosen moment, then stop and draw one frame */
+    const STOP = { idle:9000, listening:11500, thinking:12190, speaking:13400 };
+    const target = STOP[FREEZE] ?? 13400;
+    const base = performance.now();
+    frozenNow = base;
+    Sim.restart();
+    nextSampleAt = base;
+    for (let t = 0; t <= target; t += SAMPLE_MS){
+      frozenNow = base + t;
+      Sim.tick(frozenNow);
+      const tgt = S.level;
+      const k = tgt > S.shown ? 0.42 : 0.14;
+      S.shown += (tgt - S.shown) * Math.min(1, k * (SAMPLE_MS / 16.7));
+      if (S.state === "thinking" && S.openGap){
+        S.openGap.t1 = frozenNow;
+        paintNumber(frozenNow - S.openGap.t0, "live");
+      }
+      pushSamples(frozenNow);
+    }
+    Sim.stop();
+    if (FREEZE === "listening" || FREEZE === "speaking" || FREEZE === "thinking"){
+      S.live = true; el.body.dataset.live = "1";
+      Session.rail("live", "live");
+      setStateWord();
+    }
+    document.documentElement.style.setProperty("--lv", S.shown.toFixed(3));
+    requestAnimationFrame(() => draw(frozenNow));
+    return;
+  }
+
+  if (REDUCE){
+    /* no auto scroll on a reduced motion monitor: hold one finished turn
+       so the measurement is still legible, and let a live session scroll */
+    const base = performance.now();
+    frozenNow = base;
+    Sim.restart(); nextSampleAt = base;
+    for (let t = 0; t <= 13400; t += SAMPLE_MS){
+      frozenNow = base + t;
+      Sim.tick(frozenNow);
+      S.shown += (S.level - S.shown) * 0.3;
+      pushSamples(frozenNow);
+    }
+    Sim.stop();
+    draw(frozenNow);
+    frozenNow = null;
+    el.mic.addEventListener("click", () => { last = clk(); requestAnimationFrame(frame); }, { once:true });
+    return;
+  }
+
+  Sim.restart();
+  requestAnimationFrame(frame);
+}
+
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(boot);
+else addEventListener("load", boot);
+</script>
+</body>
+</html>

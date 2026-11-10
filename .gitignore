@@ -1,0 +1,14 @@
+# machine-specific
+config.local.json
+# environments, weights, caches
+venv/
+.venv/
+hf/
+cache/
+tmp/
+src/
+__pycache__/
+# runtime output: logs, recordings, transcripts, saved utterances (may contain people's voices)
+out/
+# throwaway probes
+probe*.py

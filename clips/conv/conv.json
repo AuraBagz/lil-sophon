@@ -1,0 +1,42 @@
+[
+ {
+  "file": "v01.wav",
+  "text": "What's the tallest mountain in the world?"
+ },
+ {
+  "file": "v02.wav",
+  "text": "And how tall is it?"
+ },
+ {
+  "file": "v03.wav",
+  "text": "Has anyone climbed it without oxygen?"
+ },
+ {
+  "file": "v04.wav",
+  "text": "Give me a fun fact about octopuses."
+ },
+ {
+  "file": "v05.wav",
+  "text": "Another one."
+ },
+ {
+  "file": "v06.wav",
+  "text": "What should I cook tonight if I only have eggs and rice?"
+ },
+ {
+  "file": "v07.wav",
+  "text": "How long does that take?"
+ },
+ {
+  "file": "v08.wav",
+  "text": "Who are you?"
+ },
+ {
+  "file": "v09.wav",
+  "text": "What's two plus two times three?"
+ },
+ {
+  "file": "v10.wav",
+  "text": "Thanks, that's all for now."
+ }
+]
